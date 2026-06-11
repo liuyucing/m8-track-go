@@ -1,0 +1,26 @@
+# Binaries
+bin/
+*.exe
+
+# Config with secrets
+config.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Go
+*.test
+*.out
+
+# Logs
+logs/

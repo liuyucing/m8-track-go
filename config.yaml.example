@@ -1,0 +1,29 @@
+# M8 物流轨迹同步服务配置
+# 复制此文件为 config.yaml 并填入真实值
+
+database:
+  host: "你的数据库地址"
+  port: 3366
+  name: "FumaCRM8"
+  username: "sa"
+  password: "你的密码"
+  encrypt: false
+  trust_cert: true
+  max_open_conns: 10
+  max_idle_conns: 5
+
+track17:
+  api_key: "你的17track API密钥"
+  base_url: "https://api.17track.net/track/v2.4"
+  batch_size: 40
+  http_timeout_ms: 30000
+
+scheduler:
+  cron: "0 0 3,9,15,21 * * *"
+  enabled: true
+
+query:
+  order_date_filter: "2026-05-01"
+
+app:
+  log_level: "debug"

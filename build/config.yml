@@ -1,0 +1,32 @@
+info:
+  productName: "M8 物流轨迹同步"
+  productIdentifier: "com.huiqiao.m8track"
+  productVersion: "1.0.0"
+  companyName: "HuiQiao"
+  productDescription: "M8物流轨迹同步服务"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: cd frontend && npm run dev
+      type: background
+    - cmd: go mod tidy
+      type: blocking
+    - cmd: go build -o bin\\m8-track-go.exe .
+      type: blocking
+    - cmd: bin\\m8-track-go.exe
+      type: primary

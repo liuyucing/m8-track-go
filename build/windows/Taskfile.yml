@@ -1,0 +1,27 @@
+version: '3'
+
+vars:
+  APP_NAME: "m8-track-go"
+  BIN_DIR: "../../bin"
+  FRONTEND_DIR: "../../frontend"
+
+tasks:
+  build:
+    summary: Builds the application for Windows
+    cmds:
+      - cmd: "go build -ldflags=\"-s -w\" -o {{.BIN_DIR}}\\{{.APP_NAME}}.exe ."
+        dir: ../..
+
+  package:
+    summary: Packages the application for Windows
+    deps: [build]
+    cmds:
+      - cmd: "echo Package done: {{.BIN_DIR}}\\{{.APP_NAME}}.exe"
+        dir: ../..
+
+  run:
+    summary: Runs the application
+    deps: [build]
+    cmds:
+      - cmd: "{{.BIN_DIR}}\\{{.APP_NAME}}.exe"
+        dir: ../..
