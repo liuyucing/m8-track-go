@@ -8,8 +8,15 @@ import (
 	"m8-track-go/internal/model"
 )
 
+// RegisterResult 注册结果
+type RegisterResult struct {
+	Accepted          []string // 新注册成功的运单号
+	AlreadyRegistered []string // 已注册过的运单号（错误码 -18019901）
+	Failed            []string // 真正失败的运单号（格式错误等）
+}
+
 // Register 注册运单号到 17track（自动识别承运商）
-func (c *Client) Register(ctx context.Context, trackingNumbers []string) ([]string, error) {
+func (c *Client) Register(ctx context.Context, trackingNumbers []string) (*RegisterResult, error) {
 	body := make([]model.Track17RegisterReq, len(trackingNumbers))
 	for i, num := range trackingNumbers {
 		body[i] = model.Track17RegisterReq{Number: num}
@@ -18,7 +25,7 @@ func (c *Client) Register(ctx context.Context, trackingNumbers []string) ([]stri
 }
 
 // RegisterWithCarrier 注册运单号到 17track（指定承运商代码）
-func (c *Client) RegisterWithCarrier(ctx context.Context, numberCarrierMap map[string]int) ([]string, error) {
+func (c *Client) RegisterWithCarrier(ctx context.Context, numberCarrierMap map[string]int) (*RegisterResult, error) {
 	body := make([]model.Track17RegisterReq, 0, len(numberCarrierMap))
 	for num, carrier := range numberCarrierMap {
 		body = append(body, model.Track17RegisterReq{Number: num, Carrier: carrier})
@@ -26,7 +33,7 @@ func (c *Client) RegisterWithCarrier(ctx context.Context, numberCarrierMap map[s
 	return c.doRegister(ctx, body)
 }
 
-func (c *Client) doRegister(ctx context.Context, body []model.Track17RegisterReq) ([]string, error) {
+func (c *Client) doRegister(ctx context.Context, body []model.Track17RegisterReq) (*RegisterResult, error) {
 	data, err := c.post(ctx, "/register", body)
 	if err != nil {
 		return nil, err
@@ -37,20 +44,31 @@ func (c *Client) doRegister(ctx context.Context, body []model.Track17RegisterReq
 		return nil, err
 	}
 
-	accepted := make([]string, 0, len(regData.Accepted))
+	result := &RegisterResult{}
+
+	// 解析 accepted
 	for _, item := range regData.Accepted {
-		accepted = append(accepted, item.Number)
+		result.Accepted = append(result.Accepted, item.Number)
 	}
 
-	if len(regData.Rejected) > 0 {
-	var rejectedStrs []string
-		for _, r := range regData.Rejected {
-			rejectedStrs = append(rejectedStrs, string(r))
+	// 解析 rejected，区分已注册和真正失败
+	for _, raw := range regData.Rejected {
+		var rejected model.Track17RejectedItem
+		if err := json.Unmarshal(raw, &rejected); err != nil {
+			log.Printf("解析 rejected 项失败: %v", err)
+			continue
 		}
-		log.Printf("17track 注册被拒绝的运单: %v", rejectedStrs)
+		if rejected.Error.Code == -18019901 {
+			// 已注册，视为成功
+			result.AlreadyRegistered = append(result.AlreadyRegistered, rejected.Number)
+		} else {
+			// 格式错误等，真正失败
+			log.Printf("运单 %s 注册失败: code=%d, message=%s", rejected.Number, rejected.Error.Code, rejected.Error.Message)
+			result.Failed = append(result.Failed, rejected.Number)
+		}
 	}
 
-	return accepted, nil
+	return result, nil
 }
 
 // GetTrackInfo 查询运单轨迹信息

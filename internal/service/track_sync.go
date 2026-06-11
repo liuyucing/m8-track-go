@@ -103,37 +103,53 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 			}
 		}
 
-		accepted, err := s.trackClient.RegisterWithCarrier(ctx, batchCarrierMap)
+		result, err := s.trackClient.RegisterWithCarrier(ctx, batchCarrierMap)
 		if err != nil {
 			log.Printf("注册运单失败: %v", err)
 			continue
 		}
 
-		acceptedSet := make(map[string]bool)
-		for _, num := range accepted {
-			acceptedSet[num] = true
-		}
-		log.Printf("本批次注册成功: %d/%d", len(accepted), len(batch))
+		log.Printf("本批次注册结果: 新注册 %d, 已存在 %d, 失败 %d (共 %d)",
+			len(result.Accepted), len(result.AlreadyRegistered), len(result.Failed), len(batch))
 
 		now := time.Now()
-		for _, mdNo := range batch {
-			if acceptedSet[mdNo] {
-				record := &model.TrackSyncRecord{
-					FID:         mdNoToFID[mdNo],
-					MDNo:        mdNo,
-					IsDelivered: false,
-					CreateTime:  now,
-					UpdateTime:  now,
-				}
-				if err := s.recordRepo.Insert(ctx, record); err != nil {
-					log.Printf("插入同步记录失败 mdNo=%s: %v", mdNo, err)
-				}
-			} else {
-				if err := s.shipOrderRepo.UpdateFCtrack(ctx, mdNo, "查询不到"); err != nil {
-					log.Printf("更新FCtrack失败 mdNo=%s: %v", mdNo, err)
-				}
-				log.Printf("运单 %s 注册失败，已写入FCtrack", mdNo)
+
+		// 新注册成功的运单
+		for _, mdNo := range result.Accepted {
+			record := &model.TrackSyncRecord{
+				FID:         mdNoToFID[mdNo],
+				MDNo:        mdNo,
+				IsDelivered: false,
+				CreateTime:  now,
+				UpdateTime:  now,
 			}
+			if err := s.recordRepo.Insert(ctx, record); err != nil {
+				log.Printf("插入同步记录失败 mdNo=%s: %v", mdNo, err)
+			}
+		}
+
+		// 已注册过的运单：本地补录记录，后续同步可正常查询轨迹
+		for _, mdNo := range result.AlreadyRegistered {
+			record := &model.TrackSyncRecord{
+				FID:         mdNoToFID[mdNo],
+				MDNo:        mdNo,
+				IsDelivered: false,
+				CreateTime:  now,
+				UpdateTime:  now,
+			}
+			if err := s.recordRepo.Insert(ctx, record); err != nil {
+				log.Printf("补录已注册运单失败 mdNo=%s: %v", mdNo, err)
+			} else {
+				log.Printf("补录已注册运单: mdNo=%s", mdNo)
+			}
+		}
+
+		// 真正失败的运单：标记"查询不到"
+		for _, mdNo := range result.Failed {
+			if err := s.shipOrderRepo.UpdateFCtrack(ctx, mdNo, "查询不到"); err != nil {
+				log.Printf("更新FCtrack失败 mdNo=%s: %v", mdNo, err)
+			}
+			log.Printf("运单 %s 注册失败，已写入FCtrack", mdNo)
 		}
 	}
 	return nil

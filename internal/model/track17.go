@@ -25,6 +25,18 @@ type Track17AcceptedItem struct {
 	Number string `json:"number"`
 }
 
+// Track17RejectedItem 注册被拒绝的运单项
+type Track17RejectedItem struct {
+	Number string           `json:"number"`
+	Error  Track17ErrorInfo `json:"error"`
+}
+
+// Track17ErrorInfo 17track 错误信息
+type Track17ErrorInfo struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 // Track17TrackInfo 查询轨迹返回的单条运单信息
 type Track17TrackInfo struct {
 	Number    string          `json:"number"`

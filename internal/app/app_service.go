@@ -242,6 +242,7 @@ func (s *AppService) GetOrderDetails(mdNo string) []model.TrackSyncDetail {
 	if s.detailRepo == nil {
 		return nil
 	}
+	mdNo = strings.TrimSpace(mdNo)
 	ctx := context.Background()
 	details, err := s.detailRepo.ListByMDNo(ctx, mdNo, 50)
 	if err != nil {

@@ -46,6 +46,7 @@ func (r *ShipOrderRepo) SelectPendingOrders(ctx context.Context) ([]model.ShipOr
 		if err := rows.Scan(&o.FID, &o.MDNo, &o.FCKeY); err != nil {
 			return nil, fmt.Errorf("扫描运单数据失败: %w", err)
 		}
+		o.MDNo = strings.TrimSpace(o.MDNo)
 		orders = append(orders, o)
 	}
 	return orders, rows.Err()
@@ -53,6 +54,7 @@ func (r *ShipOrderRepo) SelectPendingOrders(ctx context.Context) ([]model.ShipOr
 
 // UpdateFCtrack 更新运单的 FCtrack 字段
 func (r *ShipOrderRepo) UpdateFCtrack(ctx context.Context, mdNo, value string) error {
+	mdNo = strings.TrimSpace(mdNo)
 	_, err := r.db.ExecContext(ctx, "UPDATE scBNDtl SET FCtrack = @p1 WHERE trim(MDNo) = trim(@p2)", value, mdNo)
 	if err != nil {
 		return fmt.Errorf("更新 FCtrack 失败 mdNo=%s: %w", mdNo, err)
@@ -63,6 +65,7 @@ func (r *ShipOrderRepo) UpdateFCtrack(ctx context.Context, mdNo, value string) e
 
 // MarkDelivered 标记运单为已签收
 func (r *ShipOrderRepo) MarkDelivered(ctx context.Context, mdNo string) error {
+	mdNo = strings.TrimSpace(mdNo)
 	_, err := r.db.ExecContext(ctx, "UPDATE scBNDtl SET TrackDelivered = 1 WHERE trim(MDNo) = trim(@p1)", mdNo)
 	if err != nil {
 		return fmt.Errorf("标记签收失败 mdNo=%s: %w", mdNo, err)

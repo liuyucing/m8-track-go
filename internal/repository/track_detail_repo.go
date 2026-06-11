@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"m8-track-go/internal/model"
 )
@@ -20,6 +21,8 @@ func NewTrackDetailRepo(db *sql.DB) *TrackDetailRepo {
 
 // Insert 插入一条轨迹详情
 func (r *TrackDetailRepo) Insert(ctx context.Context, detail *model.TrackSyncDetail) error {
+	detail.MDNo = strings.TrimSpace(detail.MDNo)
+
 	query := `INSERT INTO track_sync_detail (md_no, track_status, event_desc, event_time, create_time)
               VALUES (@p1, @p2, @p3, @p4, @p5);
               SELECT SCOPE_IDENTITY();`
@@ -38,6 +41,8 @@ func (r *TrackDetailRepo) Insert(ctx context.Context, detail *model.TrackSyncDet
 
 // ListByMDNo 查询某运单号的轨迹事件
 func (r *TrackDetailRepo) ListByMDNo(ctx context.Context, mdNo string, limit int) ([]model.TrackSyncDetail, error) {
+	mdNo = strings.TrimSpace(mdNo)
+
 	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, create_time
               FROM track_sync_detail WHERE md_no = @p2 ORDER BY create_time DESC`
 

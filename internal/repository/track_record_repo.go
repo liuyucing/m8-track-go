@@ -21,6 +21,8 @@ func NewTrackRecordRepo(db *sql.DB) *TrackRecordRepo {
 
 // Insert 插入一条同步记录
 func (r *TrackRecordRepo) Insert(ctx context.Context, record *model.TrackSyncRecord) error {
+	record.MDNo = strings.TrimSpace(record.MDNo)
+
 	query := `INSERT INTO track_sync_record (fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time)
               VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9);
               SELECT SCOPE_IDENTITY();`
@@ -44,9 +46,15 @@ func (r *TrackRecordRepo) GetByMDNos(ctx context.Context, mdNos []string) ([]mod
 		return nil, nil
 	}
 
-	placeholders := make([]string, len(mdNos))
-	args := make([]interface{}, len(mdNos))
+	// 对每个 mdNo 做 trim
+	trimmed := make([]string, len(mdNos))
 	for i, mdNo := range mdNos {
+		trimmed[i] = strings.TrimSpace(mdNo)
+	}
+
+	placeholders := make([]string, len(trimmed))
+	args := make([]interface{}, len(trimmed))
+	for i, mdNo := range trimmed {
 		placeholders[i] = fmt.Sprintf("@p%d", i+1)
 		args[i] = mdNo
 	}
