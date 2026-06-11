@@ -62,7 +62,7 @@ func main() {
 			shipOrderRepo, recordRepo, detailRepo,
 			trackClient, cfg.Track17.BatchSize,
 		)
-		scheduler = service.NewScheduler(cfg.Scheduler, syncService)
+		scheduler = service.NewScheduler(cfg.Scheduler, syncService, logDir)
 	} else {
 		log.Println("配置未完成，将在GUI中进行配置")
 	}

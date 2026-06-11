@@ -46,8 +46,8 @@ func NewAppService(
 	}
 }
 
-// OnStartup Wails 生命周期 - 服务启动时调用
-func (s *AppService) OnStartup(ctx context.Context, options application.ServiceOptions) error {
+// ServiceStartup Wails v3 生命周期 - 服务启动时调用
+func (s *AppService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	log.Println("AppService 启动")
 	if s.cfg.IsConfigured() && s.scheduler != nil {
 		if err := s.scheduler.Start(); err != nil {
@@ -59,8 +59,8 @@ func (s *AppService) OnStartup(ctx context.Context, options application.ServiceO
 	return nil
 }
 
-// OnShutdown Wails 生命周期 - 服务关闭时调用
-func (s *AppService) OnShutdown() error {
+// ServiceShutdown Wails v3 生命周期 - 服务关闭时调用
+func (s *AppService) ServiceShutdown() error {
 	log.Println("AppService 关闭")
 	if s.scheduler != nil {
 		s.scheduler.Stop()
@@ -186,12 +186,8 @@ func (s *AppService) TriggerSync() error {
 		return fmt.Errorf("同步正在进行中，请稍后")
 	}
 
-	go func() {
-		ctx := context.Background()
-		if err := s.syncService.SyncAll(ctx); err != nil {
-			log.Printf("手动同步失败: %v", err)
-		}
-	}()
+	// 通过调度器的 runSync 执行，确保 lastRunTime 被正确更新
+	go s.scheduler.RunSync()
 
 	return nil
 }
