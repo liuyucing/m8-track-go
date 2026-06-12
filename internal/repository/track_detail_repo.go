@@ -63,6 +63,16 @@ func (r *TrackDetailRepo) ListByMDNo(ctx context.Context, mdNo string, limit int
 	return details, rows.Err()
 }
 
+// DeleteByMDNo 删除某运单号的全部轨迹详情，用于运单号变更时清理旧号历史。
+func (r *TrackDetailRepo) DeleteByMDNo(ctx context.Context, mdNo string) error {
+	mdNo = strings.TrimSpace(mdNo)
+	_, err := r.db.ExecContext(ctx, "DELETE FROM track_sync_detail WHERE md_no = @p1", mdNo)
+	if err != nil {
+		return fmt.Errorf("删除轨迹详情失败 mdNo=%s: %w", mdNo, err)
+	}
+	return nil
+}
+
 // ListRecent 查询最近的轨迹事件
 func (r *TrackDetailRepo) ListRecent(ctx context.Context, limit int) ([]model.TrackSyncDetail, error) {
 	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, create_time

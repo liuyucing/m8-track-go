@@ -9,7 +9,7 @@ tasks:
   build:
     summary: Builds the application for Windows
     cmds:
-      - cmd: "go build -ldflags=\"-s -w\" -o {{.BIN_DIR}}\\{{.APP_NAME}}.exe ."
+      - cmd: "go build -ldflags=\"-s -w -H windowsgui\" -o {{.BIN_DIR}}\\{{.APP_NAME}}.exe ."
         dir: ../..
 
   package:

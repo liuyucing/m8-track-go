@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"m8-track-go/internal/model"
@@ -47,6 +48,28 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 		return nil
 	}
 
+	// 运单号变更对账：scBNDtl.FID 不变但 MDNo 变了 → 清掉旧 record + 旧号 detail，
+	// 重置 TrackDelivered=0，让新号在本轮重新注册并跟踪（若新号也已签收则由 17track 返回 Delivered 自愈）。
+	for _, o := range orders {
+		if o.OldMDNo == nil {
+			continue
+		}
+		old := strings.TrimSpace(*o.OldMDNo)
+		if old == "" || old == o.MDNo {
+			continue
+		}
+		log.Printf("检测到运单号变更 dtlFID=%d 旧号=%s 新号=%s，清理旧数据并重新跟踪", o.DtlFID, old, o.MDNo)
+		if err := s.recordRepo.DeleteByDtlFID(ctx, o.DtlFID); err != nil {
+			log.Printf("删除旧同步记录失败 dtlFID=%d: %v", o.DtlFID, err)
+		}
+		if err := s.detailRepo.DeleteByMDNo(ctx, old); err != nil {
+			log.Printf("删除旧轨迹详情失败 mdNo=%s: %v", old, err)
+		}
+		if err := s.shipOrderRepo.ResetDeliveredByFID(ctx, o.DtlFID); err != nil {
+			log.Printf("重置签收状态失败 dtlFID=%d: %v", o.DtlFID, err)
+		}
+	}
+
 	// 收集所有运单号
 	allMDNos := make([]string, 0, len(orders))
 	mdNoSet := make(map[string]bool)
@@ -80,11 +103,13 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 		return nil
 	}
 
-	// 构建 mdNo -> FID 和 mdNo -> carrier 映射
+	// 构建 mdNo -> FID / dtlFID / carrier 映射
 	mdNoToFID := make(map[string]string)
+	mdNoToDtlFID := make(map[string]int64)
 	mdNoToCarrier := make(map[string]int)
 	for _, o := range orders {
 		mdNoToFID[o.MDNo] = o.FID
+		mdNoToDtlFID[o.MDNo] = o.DtlFID
 		if o.FCKeY != nil {
 			mdNoToCarrier[o.MDNo] = *o.FCKeY
 		}
@@ -116,8 +141,10 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 
 		// 新注册成功的运单
 		for _, mdNo := range result.Accepted {
+			dtlFID := mdNoToDtlFID[mdNo]
 			record := &model.TrackSyncRecord{
 				FID:         mdNoToFID[mdNo],
+				DtlFID:      &dtlFID,
 				MDNo:        mdNo,
 				IsDelivered: false,
 				CreateTime:  now,
@@ -130,8 +157,10 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 
 		// 已注册过的运单：本地补录记录，后续同步可正常查询轨迹
 		for _, mdNo := range result.AlreadyRegistered {
+			dtlFID := mdNoToDtlFID[mdNo]
 			record := &model.TrackSyncRecord{
 				FID:         mdNoToFID[mdNo],
+				DtlFID:      &dtlFID,
 				MDNo:        mdNo,
 				IsDelivered: false,
 				CreateTime:  now,
@@ -146,7 +175,7 @@ func (s *TrackSyncService) RegisterPendingOrders(ctx context.Context) error {
 
 		// 真正失败的运单：标记"查询不到"
 		for _, mdNo := range result.Failed {
-			if err := s.shipOrderRepo.UpdateFCtrack(ctx, mdNo, "查询不到"); err != nil {
+			if err := s.shipOrderRepo.UpdateFCtrackByFID(ctx, mdNoToDtlFID[mdNo], "查询不到"); err != nil {
 				log.Printf("更新FCtrack失败 mdNo=%s: %v", mdNo, err)
 			}
 			log.Printf("运单 %s 注册失败，已写入FCtrack", mdNo)
@@ -244,7 +273,9 @@ func (s *TrackSyncService) processTrackInfo(ctx context.Context, info *model.Tra
 	}
 
 	if newEvent != nil && *newEvent != "" {
-		if err := s.shipOrderRepo.UpdateFCtrack(ctx, mdNo, *newEvent); err != nil {
+		if record.DtlFID == nil {
+			log.Printf("跳过 FCtrack 回写：记录缺少 dtl_fid mdNo=%s（请回填 track_sync_record.dtl_fid）", mdNo)
+		} else if err := s.shipOrderRepo.UpdateFCtrackByFID(ctx, *record.DtlFID, *newEvent); err != nil {
 			log.Printf("更新FCtrack失败 mdNo=%s: %v", mdNo, err)
 		}
 	}
@@ -273,7 +304,9 @@ func (s *TrackSyncService) processTrackInfo(ctx context.Context, info *model.Tra
 	record.UpdateTime = now
 	if isDelivered {
 		record.IsDelivered = true
-		if err := s.shipOrderRepo.MarkDelivered(ctx, mdNo); err != nil {
+		if record.DtlFID == nil {
+			log.Printf("跳过签收标记：记录缺少 dtl_fid mdNo=%s（请回填 track_sync_record.dtl_fid）", mdNo)
+		} else if err := s.shipOrderRepo.MarkDeliveredByFID(ctx, *record.DtlFID); err != nil {
 			log.Printf("标记签收失败 mdNo=%s: %v", mdNo, err)
 		}
 		log.Printf("运单 %s 已签收，标记不再扫描", mdNo)

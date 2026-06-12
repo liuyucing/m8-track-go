@@ -23,13 +23,13 @@ func NewTrackRecordRepo(db *sql.DB) *TrackRecordRepo {
 func (r *TrackRecordRepo) Insert(ctx context.Context, record *model.TrackSyncRecord) error {
 	record.MDNo = strings.TrimSpace(record.MDNo)
 
-	query := `INSERT INTO track_sync_record (fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time)
-              VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9);
+	query := `INSERT INTO track_sync_record (fid, dtl_fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time)
+              VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10);
               SELECT SCOPE_IDENTITY();`
 
 	var id int64
 	err := r.db.QueryRowContext(ctx, query,
-		record.FID, record.MDNo, record.TrackStatus, record.LastEvent,
+		record.FID, record.DtlFID, record.MDNo, record.TrackStatus, record.LastEvent,
 		record.LastEventTime, record.LastSyncTime, record.IsDelivered,
 		record.CreateTime, record.UpdateTime,
 	).Scan(&id)
@@ -59,7 +59,7 @@ func (r *TrackRecordRepo) GetByMDNos(ctx context.Context, mdNos []string) ([]mod
 		args[i] = mdNo
 	}
 
-	query := fmt.Sprintf(`SELECT id, fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time
+	query := fmt.Sprintf(`SELECT id, fid, dtl_fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time
                           FROM track_sync_record WHERE md_no IN (%s)`, strings.Join(placeholders, ", "))
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -71,7 +71,7 @@ func (r *TrackRecordRepo) GetByMDNos(ctx context.Context, mdNos []string) ([]mod
 	var records []model.TrackSyncRecord
 	for rows.Next() {
 		var rec model.TrackSyncRecord
-		if err := rows.Scan(&rec.ID, &rec.FID, &rec.MDNo, &rec.TrackStatus, &rec.LastEvent,
+		if err := rows.Scan(&rec.ID, &rec.FID, &rec.DtlFID, &rec.MDNo, &rec.TrackStatus, &rec.LastEvent,
 			&rec.LastEventTime, &rec.LastSyncTime, &rec.IsDelivered, &rec.CreateTime, &rec.UpdateTime); err != nil {
 			return nil, fmt.Errorf("扫描同步记录失败: %w", err)
 		}
@@ -96,6 +96,15 @@ func (r *TrackRecordRepo) Update(ctx context.Context, record *model.TrackSyncRec
 	return nil
 }
 
+// DeleteByDtlFID 按 scBNDtl.FID（明细主键）删除同步记录，用于运单号变更时清理旧记录。
+func (r *TrackRecordRepo) DeleteByDtlFID(ctx context.Context, dtlFID int64) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM track_sync_record WHERE dtl_fid = @p1", dtlFID)
+	if err != nil {
+		return fmt.Errorf("删除同步记录失败 dtlFID=%d: %w", dtlFID, err)
+	}
+	return nil
+}
+
 // CountByStatus 按签收状态统计数量
 func (r *TrackRecordRepo) CountByStatus(ctx context.Context, isDelivered bool) (int64, error) {
 	var count int64
@@ -112,7 +121,7 @@ func (r *TrackRecordRepo) CountAll(ctx context.Context) (int64, error) {
 
 // ListRecent 查询最近的同步记录
 func (r *TrackRecordRepo) ListRecent(ctx context.Context, limit int) ([]model.TrackSyncRecord, error) {
-	query := `SELECT TOP (@p1) id, fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time
+	query := `SELECT TOP (@p1) id, fid, dtl_fid, md_no, track_status, last_event, last_event_time, last_sync_time, is_delivered, create_time, update_time
               FROM track_sync_record ORDER BY update_time DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, limit)
@@ -124,7 +133,7 @@ func (r *TrackRecordRepo) ListRecent(ctx context.Context, limit int) ([]model.Tr
 	var records []model.TrackSyncRecord
 	for rows.Next() {
 		var rec model.TrackSyncRecord
-		if err := rows.Scan(&rec.ID, &rec.FID, &rec.MDNo, &rec.TrackStatus, &rec.LastEvent,
+		if err := rows.Scan(&rec.ID, &rec.FID, &rec.DtlFID, &rec.MDNo, &rec.TrackStatus, &rec.LastEvent,
 			&rec.LastEventTime, &rec.LastSyncTime, &rec.IsDelivered, &rec.CreateTime, &rec.UpdateTime); err != nil {
 			return nil, fmt.Errorf("扫描记录失败: %w", err)
 		}

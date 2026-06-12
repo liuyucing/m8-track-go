@@ -43,7 +43,7 @@ wails3 build
 
 > **注意：** 如果 `wails3 build` 未能正确生成 exe，可直接使用：
 > ```bash
-> go build -ldflags="-s -w" -o bin/m8-track-go.exe .
+> go build -ldflags="-s -w -H windowsgui" -o bin\m8-track-go.exe
 > ```
 记得先 cd frontend && npm run build 再重新构建 exe，否则嵌入的还是旧的前端。
 

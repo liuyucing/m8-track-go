@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -33,16 +35,22 @@ type Scheduler struct {
 	lastRunTime *time.Time
 	lastRunErr  error
 	isRunning   bool
+	syncTimeout time.Duration
 }
 
 // NewScheduler 创建调度器，stateDir 用于存放 sync_state.json
 func NewScheduler(cfg config.SchedulerConfig, syncService *TrackSyncService, stateDir string) *Scheduler {
+	syncTimeout := time.Duration(cfg.SyncTimeoutSeconds) * time.Second
+	if syncTimeout <= 0 {
+		syncTimeout = 15 * time.Minute // 兜底，正常应由 config applyDefaults 提供
+	}
 	s := &Scheduler{
 		cron:        cron.New(cron.WithSeconds()), // 支持 6 字段 cron 格式
 		syncService: syncService,
 		enabled:     cfg.Enabled,
 		spec:        cfg.Cron,
 		stateFile:   filepath.Join(stateDir, "sync_state.json"),
+		syncTimeout: syncTimeout,
 	}
 	s.loadState()
 	return s
@@ -86,6 +94,15 @@ func (s *Scheduler) RunSync() {
 	s.mu.Unlock()
 
 	defer func() {
+		// 兜底 recover：同步在 goroutine 中执行，任何 panic 若不恢复会导致整个进程崩溃（闪退）。
+		// 捕获后把 panic 值与完整堆栈写入日志文件（panic 默认走 stderr，GUI 下不可见），
+		// 并记为本次 lastRunErr（仪表盘可见）；随后正常复位 isRunning 并持久化状态。
+		if r := recover(); r != nil {
+			log.Printf("同步发生 panic（已恢复，未崩溃）: %v\n%s", r, debug.Stack())
+			s.mu.Lock()
+			s.lastRunErr = fmt.Errorf("同步 panic: %v", r)
+			s.mu.Unlock()
+		}
 		s.mu.Lock()
 		s.isRunning = false
 		now := time.Now()
@@ -95,16 +112,28 @@ func (s *Scheduler) RunSync() {
 	}()
 
 	log.Println("开始定时同步...")
-	ctx := context.Background()
-	if err := s.syncService.SyncAll(ctx); err != nil {
-		s.mu.Lock()
-		s.lastRunErr = err
-		s.mu.Unlock()
+	// 为整次同步设置超时上限：即使某条 SQL Server 连接变成僵尸、查询无限阻塞，
+	// 到点也会因 ctx 取消而返回，defer 随之执行、isRunning 复位，下次同步可正常触发。
+	ctx, cancel := context.WithTimeout(context.Background(), s.syncTimeout)
+	defer cancel()
+
+	err := s.syncService.SyncAll(ctx)
+	// SyncAll 内部部分错误会被吞掉（如 HTTP 批次失败仅 log+continue），
+	// 这里用 ctx.Err() 兜底，确保超时被如实上报，不会误报“完成”。
+	if err == nil {
+		err = ctx.Err()
+	}
+
+	s.mu.Lock()
+	s.lastRunErr = err
+	s.mu.Unlock()
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		log.Printf("定时同步超时（超过 %v），已强制结束；下次调度或手动触发将自动恢复", s.syncTimeout)
+	case err != nil:
 		log.Printf("定时同步失败: %v", err)
-	} else {
-		s.mu.Lock()
-		s.lastRunErr = nil
-		s.mu.Unlock()
+	default:
 		log.Println("定时同步完成")
 	}
 }

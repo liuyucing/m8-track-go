@@ -22,6 +22,9 @@ func MustOpenDB(cfg config.DatabaseConfig) *sql.DB {
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(30 * time.Minute)
+	// 空闲连接超过该时长即关闭，避免把被网络中间设备/数据库静默丢弃的“僵尸连接”
+	// 再次交给查询使用而无限阻塞。
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	// 验证连接
 	if err := db.Ping(); err != nil {

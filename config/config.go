@@ -53,8 +53,9 @@ type Track17Config struct {
 
 // SchedulerConfig 定时任务配置
 type SchedulerConfig struct {
-	Cron    string `yaml:"cron"`
-	Enabled bool   `yaml:"enabled"`
+	Cron               string `yaml:"cron"`
+	Enabled            bool   `yaml:"enabled"`
+	SyncTimeoutSeconds int    `yaml:"sync_timeout_seconds"`
 }
 
 // QueryConfig 查询条件配置
@@ -110,8 +111,9 @@ func DefaultConfig() *Config {
 			HTTPTimeoutMs: 30000,
 		},
 		Scheduler: SchedulerConfig{
-			Cron:    "0 0 3,9,15,21 * * *",
-			Enabled: true,
+			Cron:               "0 0 3,9,15,21 * * *",
+			Enabled:            true,
+			SyncTimeoutSeconds: 900,
 		},
 		Query: QueryConfig{
 			OrderDateFilter: "2026-05-01",
@@ -154,5 +156,8 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Database.MaxIdleConns == 0 {
 		cfg.Database.MaxIdleConns = 5
+	}
+	if cfg.Scheduler.SyncTimeoutSeconds == 0 {
+		cfg.Scheduler.SyncTimeoutSeconds = 900
 	}
 }
