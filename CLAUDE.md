@@ -22,7 +22,9 @@ cd frontend && npm run dev
 go build ./...
 ```
 
-No test framework is configured yet. There are no `*_test.go` files.
+No test framework is configured yet; plain `go test ./...` covers the pure helpers in `internal/service/` (`trackdates_test.go`, `trackevents_test.go`, `tracklocation_test.go`).
+
+**Timezone gotcha:** 17track `time_iso` values carry the event's local UTC offset, and go-mssqldb drops the offset when writing `DATETIME` columns (wall clock preserved; reads come back as "wall clock in UTC"). Anything comparing times across a DB round-trip (e.g. event dedup keys) must format in the time's own location, never convert to UTC — see `eventDedupKey`.
 
 ## Architecture
 
@@ -32,7 +34,7 @@ No test framework is configured yet. There are no `*_test.go` files.
 
 **Data flow (two-phase sync):**
 1. `TrackSyncService.RegisterPendingOrders` — queries `scbn`/`scBNDtl` tables for untracked shipments, registers tracking numbers with 17track `/register` endpoint, inserts into `track_sync_record`
-2. `TrackSyncService.SyncTrackingInfo` — fetches tracking updates from 17track `/gettrackinfo`, updates `track_sync_record`, inserts new events into `track_sync_detail`, and writes status back to `scBNDtl.FCtrack` / `scBNDtl.TrackDelivered`
+2. `TrackSyncService.SyncTrackingInfo` — fetches tracking updates from 17track `/gettrackinfo`, updates `track_sync_record`, inserts new events into `track_sync_detail` (deduped by wall-clock minute + stage + description), and writes status back to `scBNDtl.FCtrack` / `scBNDtl.TrackDelivered`; on delivery it also writes `scBNDtl.location` (carrier delivery location) and `scBNDtl.locationmatch` (匹配/不匹配, via `service.MatchLocation` comparing against `scBNDtl.CustShipInfo`)
 
 **Package responsibilities:**
 - `config/` — YAML config loading with `config.yaml`, defaults via `DefaultConfig()`, `IsConfigured()` guards
@@ -54,7 +56,7 @@ No test framework is configured yet. There are no `*_test.go` files.
 ### Database
 
 SQL Server (go-mssqldb driver). Two "domains" of tables:
-- **ERP tables** (`scbn`, `scBNDtl`) — read-only except `FCtrack` and `TrackDelivered` columns written back by the sync service
+- **ERP tables** (`scbn`, `scBNDtl`) — read-only except these sync-written columns: `FCtrack`, `TrackDelivered`, `FCshipDate`, `FCdeliveredDate`, `location`, `locationmatch`
 - **Local sync tables** (`track_sync_record`, `track_sync_detail`) — created and managed by this application
 
 Config default DB: `FumaCRM8` on port `3366`.

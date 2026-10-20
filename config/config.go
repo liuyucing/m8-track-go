@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -65,7 +67,22 @@ type QueryConfig struct {
 
 // AppConfig 应用级配置
 type AppConfig struct {
-	LogLevel string `yaml:"log_level"`
+	LogLevel            string `yaml:"log_level"`
+	DestinationTimezone string `yaml:"destination_timezone"` // IANA 时区名，如 Asia/Shanghai；空=服务器本地时区。未签收时发货日按此兜底
+}
+
+// DestLocation 解析目的地时区配置。空或无效则回退到服务器本地时区。
+// 用于未签收时（无 Delivered 里程碑可推导目的地时区）的发货日兜底。
+func (a AppConfig) DestLocation() *time.Location {
+	if a.DestinationTimezone == "" {
+		return time.Local
+	}
+	loc, err := time.LoadLocation(a.DestinationTimezone)
+	if err != nil {
+		log.Printf("destination_timezone %q 无效，回退到服务器本地时区: %v", a.DestinationTimezone, err)
+		return time.Local
+	}
+	return loc
 }
 
 // MustLoad 加载配置文件，失败则 panic

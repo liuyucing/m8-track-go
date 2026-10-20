@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"m8-track-go/config"
 	"m8-track-go/internal/model"
@@ -29,7 +30,7 @@ func NewShipOrderRepo(db *sql.DB, queryCfg config.QueryConfig) *ShipOrderRepo {
 //
 // 通过 LEFT JOIN track_sync_record 带出 OldMDNo（仅当检测到变更时非空）。
 func (r *ShipOrderRepo) SelectPendingOrders(ctx context.Context) ([]model.ShipOrder, error) {
-	query := `SELECT m.FID, d1.FID AS DtlFID, trim(d1.MDNo) AS MDNo, d1.FCkey, r.md_no AS OldMDNo
+	query := `SELECT m.FID, d1.FID AS DtlFID, trim(d1.MDNo) AS MDNo, d1.FCkey, r.md_no AS OldMDNo, d1.CustShipInfo
               FROM scbn m
               INNER JOIN scBNDtl d1 ON m.fid = d1.mfid
               LEFT JOIN track_sync_record r ON r.dtl_fid = d1.FID
@@ -51,8 +52,8 @@ func (r *ShipOrderRepo) SelectPendingOrders(ctx context.Context) ([]model.ShipOr
 	var orders []model.ShipOrder
 	for rows.Next() {
 		var o model.ShipOrder
-		var oldMDNo sql.NullString
-		if err := rows.Scan(&o.FID, &o.DtlFID, &o.MDNo, &o.FCKeY, &oldMDNo); err != nil {
+		var oldMDNo, custShipInfo sql.NullString
+		if err := rows.Scan(&o.FID, &o.DtlFID, &o.MDNo, &o.FCKeY, &oldMDNo, &custShipInfo); err != nil {
 			return nil, fmt.Errorf("扫描运单数据失败: %w", err)
 		}
 		o.MDNo = strings.TrimSpace(o.MDNo)
@@ -61,6 +62,10 @@ func (r *ShipOrderRepo) SelectPendingOrders(ctx context.Context) ([]model.ShipOr
 			if old != "" && old != o.MDNo {
 				o.OldMDNo = &old
 			}
+		}
+		if custShipInfo.Valid {
+			s := custShipInfo.String
+			o.CustShipInfo = &s
 		}
 		orders = append(orders, o)
 	}
@@ -99,5 +104,33 @@ func (r *ShipOrderRepo) MarkDeliveredByFID(ctx context.Context, dtlFID int64) er
 		return fmt.Errorf("标记签收失败 dtlFID=%d: %w", dtlFID, err)
 	}
 	log.Printf("标记签收: dtlFID=%d", dtlFID)
+	return nil
+}
+
+// UpdateDatesByFID 按 scBNDtl.FID（明细主键）回写发货/签收日期到 ERP 表。
+// 列 FCshipDate / FCdeliveredDate 需由 DBA 预先在 scBNDtl 上创建（见 migrations/erp_scBNDtl_dates.sql）。
+// 二者皆 nil 时调用方应跳过本方法。
+func (r *ShipOrderRepo) UpdateDatesByFID(ctx context.Context, dtlFID int64, shipDate, deliveredDate *time.Time) error {
+	_, err := r.db.ExecContext(ctx,
+		"UPDATE scBNDtl SET FCshipDate = @p1, FCdeliveredDate = @p2 WHERE FID = @p3",
+		shipDate, deliveredDate, dtlFID)
+	if err != nil {
+		return fmt.Errorf("回写发货/签收日期失败 dtlFID=%d: %w", dtlFID, err)
+	}
+	log.Printf("回写日期: dtlFID=%d, ship=%v delivered=%v", dtlFID, shipDate, deliveredDate)
+	return nil
+}
+
+// UpdateLocationByFID 按 scBNDtl.FID（明细主键）回写签收地点及其与客户收货信息的匹配结果。
+// 仅在运单签收后由同步服务调用：location 取轨迹签收事件地点，
+// locationmatch 为"匹配"/"不匹配"（见 service.MatchLocation）。
+func (r *ShipOrderRepo) UpdateLocationByFID(ctx context.Context, dtlFID int64, location, locationMatch string) error {
+	_, err := r.db.ExecContext(ctx,
+		"UPDATE scBNDtl SET location = @p1, locationmatch = @p2 WHERE FID = @p3",
+		location, locationMatch, dtlFID)
+	if err != nil {
+		return fmt.Errorf("回写签收地点失败 dtlFID=%d: %w", dtlFID, err)
+	}
+	log.Printf("回写签收地点: dtlFID=%d, location=%s, locationmatch=%s", dtlFID, location, locationMatch)
 	return nil
 }

@@ -196,12 +196,14 @@ func (s *AppService) TriggerSync() error {
 
 // OrderListItem 订单列表项
 type OrderListItem struct {
-	MDNo         string  `json:"mdNo"`
-	FID          string  `json:"fid"`
-	TrackStatus  *string `json:"trackStatus"`
-	LastEvent    *string `json:"lastEvent"`
-	IsDelivered  bool    `json:"isDelivered"`
-	LastSyncTime string  `json:"lastSyncTime"`
+	MDNo          string  `json:"mdNo"`
+	FID           string  `json:"fid"`
+	TrackStatus   *string `json:"trackStatus"`
+	LastEvent     *string `json:"lastEvent"`
+	ShipDate      string  `json:"shipDate"`
+	DeliveredDate string  `json:"deliveredDate"`
+	IsDelivered   bool    `json:"isDelivered"`
+	LastSyncTime  string  `json:"lastSyncTime"`
 }
 
 // GetOrders 获取订单列表
@@ -227,6 +229,12 @@ func (s *AppService) GetOrders(pageSize int) []OrderListItem {
 		}
 		if r.LastSyncTime != nil {
 			item.LastSyncTime = r.LastSyncTime.Format("2006-01-02 15:04:05")
+		}
+		if r.ShipDate != nil {
+			item.ShipDate = r.ShipDate.Format("2006-01-02")
+		}
+		if r.DeliveredDate != nil {
+			item.DeliveredDate = r.DeliveredDate.Format("2006-01-02")
 		}
 		items = append(items, item)
 	}

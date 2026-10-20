@@ -23,14 +23,14 @@ func NewTrackDetailRepo(db *sql.DB) *TrackDetailRepo {
 func (r *TrackDetailRepo) Insert(ctx context.Context, detail *model.TrackSyncDetail) error {
 	detail.MDNo = strings.TrimSpace(detail.MDNo)
 
-	query := `INSERT INTO track_sync_detail (md_no, track_status, event_desc, event_time, create_time)
-              VALUES (@p1, @p2, @p3, @p4, @p5);
+	query := `INSERT INTO track_sync_detail (md_no, track_status, event_desc, event_time, stage, location, create_time)
+              VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7);
               SELECT SCOPE_IDENTITY();`
 
 	var id int64
 	err := r.db.QueryRowContext(ctx, query,
 		detail.MDNo, detail.TrackStatus, detail.EventDesc,
-		detail.EventTime, detail.CreateTime,
+		detail.EventTime, detail.Stage, detail.Location, detail.CreateTime,
 	).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("插入轨迹详情失败: %w", err)
@@ -43,8 +43,8 @@ func (r *TrackDetailRepo) Insert(ctx context.Context, detail *model.TrackSyncDet
 func (r *TrackDetailRepo) ListByMDNo(ctx context.Context, mdNo string, limit int) ([]model.TrackSyncDetail, error) {
 	mdNo = strings.TrimSpace(mdNo)
 
-	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, create_time
-              FROM track_sync_detail WHERE md_no = @p2 ORDER BY create_time DESC`
+	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, stage, location, create_time
+              FROM track_sync_detail WHERE md_no = @p2 ORDER BY event_time DESC, create_time DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, limit, mdNo)
 	if err != nil {
@@ -55,7 +55,7 @@ func (r *TrackDetailRepo) ListByMDNo(ctx context.Context, mdNo string, limit int
 	var details []model.TrackSyncDetail
 	for rows.Next() {
 		var d model.TrackSyncDetail
-		if err := rows.Scan(&d.ID, &d.MDNo, &d.TrackStatus, &d.EventDesc, &d.EventTime, &d.CreateTime); err != nil {
+		if err := rows.Scan(&d.ID, &d.MDNo, &d.TrackStatus, &d.EventDesc, &d.EventTime, &d.Stage, &d.Location, &d.CreateTime); err != nil {
 			return nil, fmt.Errorf("扫描轨迹详情失败: %w", err)
 		}
 		details = append(details, d)
@@ -75,7 +75,7 @@ func (r *TrackDetailRepo) DeleteByMDNo(ctx context.Context, mdNo string) error {
 
 // ListRecent 查询最近的轨迹事件
 func (r *TrackDetailRepo) ListRecent(ctx context.Context, limit int) ([]model.TrackSyncDetail, error) {
-	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, create_time
+	query := `SELECT TOP (@p1) id, md_no, track_status, event_desc, event_time, stage, location, create_time
               FROM track_sync_detail ORDER BY create_time DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, limit)
@@ -87,7 +87,7 @@ func (r *TrackDetailRepo) ListRecent(ctx context.Context, limit int) ([]model.Tr
 	var details []model.TrackSyncDetail
 	for rows.Next() {
 		var d model.TrackSyncDetail
-		if err := rows.Scan(&d.ID, &d.MDNo, &d.TrackStatus, &d.EventDesc, &d.EventTime, &d.CreateTime); err != nil {
+		if err := rows.Scan(&d.ID, &d.MDNo, &d.TrackStatus, &d.EventDesc, &d.EventTime, &d.Stage, &d.Location, &d.CreateTime); err != nil {
 			return nil, fmt.Errorf("扫描轨迹详情失败: %w", err)
 		}
 		details = append(details, d)

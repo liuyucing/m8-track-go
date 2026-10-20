@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"log"
@@ -53,6 +54,9 @@ func main() {
 		db = repository.MustOpenDB(cfg.Database)
 		defer db.Close()
 
+		// 幂等补齐本地同步表所需列（ship_date/delivered_date/stage/location）
+		repository.EnsureLocalSchema(context.Background(), db)
+
 		shipOrderRepo = repository.NewShipOrderRepo(db, cfg.Query)
 		recordRepo = repository.NewTrackRecordRepo(db)
 		detailRepo = repository.NewTrackDetailRepo(db)
@@ -60,7 +64,7 @@ func main() {
 
 		syncService = service.NewTrackSync(
 			shipOrderRepo, recordRepo, detailRepo,
-			trackClient, cfg.Track17.BatchSize,
+			trackClient, cfg.Track17.BatchSize, cfg.App.DestLocation(),
 		)
 		scheduler = service.NewScheduler(cfg.Scheduler, syncService, logDir)
 	} else {

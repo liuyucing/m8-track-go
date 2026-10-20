@@ -9,5 +9,7 @@ type TrackSyncDetail struct {
 	TrackStatus *string    `json:"trackStatus" db:"track_status"`
 	EventDesc   *string    `json:"eventDesc" db:"event_desc"`
 	EventTime   *time.Time `json:"eventTime" db:"event_time"`
+	Stage       *string    `json:"stage" db:"stage"`       // 事件阶段：PickedUp/InTransit/Delivered/...
+	Location    *string    `json:"location" db:"location"` // 事件地点
 	CreateTime  time.Time  `json:"createTime" db:"create_time"`
 }
